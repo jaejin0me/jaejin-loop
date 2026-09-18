@@ -130,7 +130,7 @@ def prompt_for(state, work, repo, result_path):
     return f'''다음 지침 파일을 읽고 수행하라: {HERE / 'references' / (role + '.md')}
 저장소: {repo}
 작업 폴더: {work}
-GitLab 이슈: {state['issue']}
+이슈: {state['issue']}
 현재 단계: {state['phase']}{assigned}{reviewing}{scope}{passed}
 현재 호출 식별자: {state['run_id']}
 기존 문서가 있으면 읽고 이어가라. 새 대화라는 이유로 계획이나 작업 기록을 초기화하지 마라.
@@ -348,7 +348,7 @@ def release(runtime):
 
 def main():
     parser = argparse.ArgumentParser(description='Herdr에서 설계 세션을 유지하고 새 구현 세션을 순차 실행합니다.')
-    parser.add_argument('issue', nargs='?', help='GitLab 이슈 URL 또는 현재 프로젝트의 이슈 번호')
+    parser.add_argument('issue', nargs='?', help='이슈 URL 또는 현재 프로젝트의 이슈 번호')
     parser.add_argument('--repo', required=True, type=Path, help='구현할 별도 Git worktree')
     parser.add_argument('--work', type=Path, help='작업 문서·호출 기록 폴더, repo 기준 상대 경로 가능')
 
@@ -377,7 +377,7 @@ def main():
             parser.error('--release는 --repo와만 함께 사용합니다.')
     else:
         if not args.issue:
-            parser.error('GitLab 이슈 URL 또는 번호가 필요합니다.')
+            parser.error('이슈 URL 또는 번호가 필요합니다.')
         if not args.work:
             parser.error('--work가 필요합니다.')
 

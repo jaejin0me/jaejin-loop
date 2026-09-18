@@ -19,7 +19,8 @@
 
 ## 최초 설계
 
-1. 이슈 확인: 번호면 지정 저장소의 GitLab 프로젝트 대상, `glab issue view` 등 읽기 전용 조회
+1. 이슈 확인: `git remote get-url origin`의 호스트가 github.com이면 `gh issue view`,
+   그 외 호스트면 `glab issue view`로 읽기 전용 조회. 번호만 받으면 지정 저장소의 프로젝트가 대상
    - 인증·접근 실패: 추측 금지, `blocked` 보고
    - 댓글·라벨·이슈 상태 변경 금지
 2. 조사: 기존 코드, 테스트, 문서. 기존 작업 문서가 있으면 실제 상태와 대조
