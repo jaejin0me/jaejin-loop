@@ -1,8 +1,0 @@
-{
-  "run_id": "7d0c1e5a9b3f42d8c604a1e7b25f30da",
-  "phase": "design",
-  "task": null,
-  "action": "implement",
-  "next_task": "T-001",
-  "summary": "이슈 87 설계 완료. 수용 조건 3개, 작업 2개. T-001부터 시작"
-}

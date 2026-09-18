@@ -14,7 +14,6 @@ GitHub 또는 GitLab 이슈를 설계한 뒤, 항목 하나의 구현과 설계 
 - `references/designer.md`: 최초 설계와 매 구현 결과 검토 지침.
 - `references/implementer.md`: 지정 항목 하나의 구현과 결과 기록 지침.
 - `SKILL.md`: Claude Code 스킬 정의. 이 저장소를 스킬로 설치했을 때만 쓰인다.
-- `examples/issue-87/`: 작업 문서 세 개와 호출 기록의 작성 예시. 실행에는 쓰이지 않는 참고 자료다.
 
 macOS 또는 Linux의 Herdr pane 안에서 실행한다.
 사용할 에이전트 CLI와 이슈 읽기용 `gh` 또는 `glab` 인증을 먼저 준비한다.
