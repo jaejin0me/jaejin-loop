@@ -282,9 +282,12 @@ def run(args, repo, work, runtime):
                 state['task_attempts'][state['task']] = state['task_attempts'].get(state['task'], 0) + 1
                 state['review_target'] = state['run_id']
 
-            # Keep the designer available across iterations and script invocations.
-            if not is_design:
+            # Keep the designer available across iterations and script invocations,
+            # but close it on completion so a finished run leaves no pane to interpret.
+            if not is_design or action == 'complete':
                 herdr('pane', 'close', pane)
+                if is_design:
+                    state['design_pane'] = None
 
             state.update(pane=None, status='ready', feedback='')
             if action == 'complete':
