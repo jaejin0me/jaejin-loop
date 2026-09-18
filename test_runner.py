@@ -88,10 +88,12 @@ class LoopTests(unittest.TestCase):
         starts = [c for c in self.calls if c[:2] == ('agent', 'start')]
         self.assertEqual(len(starts), 2)
         self.assertEqual(len({c[2] for c in starts}), 2)
-        self.assertEqual(len([c for c in self.calls if c[:2] == ('pane', 'close')]), 1)
+        # One close for the implementer, one for the designer once the work completes.
+        self.assertEqual(len([c for c in self.calls if c[:2] == ('pane', 'close')]), 2)
         prompts = [c[2] for c in self.calls if c[:2] == ('agent', 'prompt')]
         self.assertEqual(prompts[0], prompts[2])
         self.assertEqual(self.state()['status'], 'complete')
+        self.assertIsNone(self.state()['design_pane'])
 
     def test_runner_state_lives_outside_the_worktree(self):
         with patch.object(runner, 'herdr', self.fake_herdr):
@@ -370,7 +372,9 @@ class LoopTests(unittest.TestCase):
             self.panes.remove(previous)
             self.args.stop_after = 'review'
             self.loop()
-        self.assertNotEqual(self.state()['design_pane'], previous)
+        # Completion clears design_pane, so the split calls are what prove the recreation.
+        self.assertEqual(len([c for c in self.calls if c[:2] == ('pane', 'split')]), 3)
+        self.assertIsNone(self.state()['design_pane'])
         self.assertEqual(self.state()['status'], 'complete')
 
     def test_design_turns_rotate_the_session(self):
