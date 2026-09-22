@@ -31,17 +31,62 @@ def herdr(*args, timeout=30):
     return response['result']
 
 
+TRANSIENT = ('agent_not_ready', 'agent_pane_busy', 'agent_prompt_stalled')
+
+
+def retry(call, attempts=3, delay=5, guard=None):
+    """Repeat a herdr call while it fails for a reason that clears on its own.
+
+    A CLI self-update or a pane that has not finished booting shows up as one of the
+    TRANSIENT codes. Waiting is the whole fix, so do not spend a user round trip on it.
+    """
+    for remaining in range(attempts - 1, -1, -1):
+        try:
+            return call()
+        except RuntimeError as error:
+            if not remaining or not any(code in str(error) for code in TRANSIENT):
+                raise
+            if guard and not guard():
+                raise
+            time.sleep(delay)
+    return None
+
+
+def pane_alive(pane):
+    panes = herdr('pane', 'list', '--workspace', pane.split(':')[0])['panes']
+    return any(p['pane_id'] == pane for p in panes)
+
+
+def pane_hint(pane):
+    """`wD:p7` alone does not say which box on screen. Add where it sits."""
+    try:
+        layout = herdr('pane', 'layout', '--pane', pane)['layout']
+        rect = next(p['rect'] for p in layout['panes'] if p['pane_id'] == pane)
+        column = sorted({p['rect']['x'] for p in layout['panes']}).index(rect['x']) + 1
+        row = sorted(p['rect']['y'] for p in layout['panes']
+                     if p['rect']['x'] == rect['x']).index(rect['y']) + 1
+        return (f" ({layout['tab_id']} 탭, {column}번째 열의 위에서 {row}번째 칸, "
+                f"높이 {rect['height']}줄)")
+    except (RuntimeError, OSError, ValueError, KeyError, StopIteration):
+        return ''
+
+
 def save(path, value):
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
     temporary.replace(path)
 
 
-def section(text, mark, heading):
-    """Body under an exact `mark heading` line. Tolerates CRLF documents."""
-    found = re.search(rf'^{mark} {re.escape(heading)}[ \t\r]*$\n?(.*?)(?=^{mark} |\Z)',
+def sections(text, mark, heading):
+    """Bodies under every exact `mark heading` line. Tolerates CRLF documents."""
+    return re.findall(rf'^{mark} {re.escape(heading)}[ \t\r]*$\n?(.*?)(?=^{mark} |\Z)',
                       text, re.MULTILINE | re.DOTALL)
-    return found.group(1) if found else None
+
+
+def section(text, mark, heading):
+    """Body under the first exact `mark heading` line."""
+    found = sections(text, mark, heading)
+    return found[0] if found else None
 
 
 def document(work, name):
@@ -53,11 +98,28 @@ def document(work, name):
 
 
 def records(run_id, progress, task, mark):
-    """True when the task section carries `mark` with this run_id on its own line."""
-    task_body = section(progress, '##', task) if task else None
-    body = section(task_body, '###', mark) if task_body else None
-    return bool(body) and bool(
-        re.search(rf'^run_id: {re.escape(run_id)}[ \t\r]*$', body, re.MULTILINE))
+    """True when a task section carries `mark` with this run_id on its own line.
+
+    Scans every `## task` and `### mark` occurrence: a resumed review sometimes appends
+    a second section instead of updating the first, and that is a formatting slip, not
+    a missing record. duplicated() reports the slip so the designer can fold them.
+    """
+    if not task:
+        return False
+    for task_body in sections(progress, '##', task):
+        for body in sections(task_body, '###', mark):
+            if re.search(rf'^run_id: {re.escape(run_id)}[ \t\r]*$', body, re.MULTILINE):
+                return True
+    return False
+
+
+def duplicated(progress, task, mark):
+    """Section titles that appear more than once under the task, newest slip first."""
+    bodies = sections(progress, '##', task) if task else []
+    repeated = [f'## {task}'] if len(bodies) > 1 else []
+    if sum(len(sections(body, '###', mark)) for body in bodies) > 1:
+        repeated.append(f'### {mark}')
+    return repeated
 
 
 def validate_receipt(receipt, state, work):
@@ -85,6 +147,10 @@ def validate_receipt(receipt, state, work):
         return action
 
     progress = document(work, 'progress.md')
+    mark = '구현 결과' if state['phase'] == 'implement' else '설계 검토'
+    for title in duplicated(progress, state['task'], mark):
+        print(f'주의: progress.md에 `{title}` 절이 둘 이상입니다. 다음 호출에서 하나로 합치게 하세요.',
+              flush=True)
     if state['phase'] == 'implement' and not records(state['run_id'], progress, state['task'], '구현 결과'):
         raise RuntimeError('progress.md에 현재 작업과 run_id의 구현 결과가 없습니다.')
     # The designer is checked the same way as the implementer: a review must name what it reviewed.
@@ -169,9 +235,17 @@ def run(args, repo, work, runtime):
                      review_target=None, task_attempts={})
         save(path, state)
 
+    if args.redesign and state['status'] in ('ready', 'complete'):
+        state.update(phase='design', task=None, status='ready', review_target=None)
+        save(path, state)
+        print('설계 단계로 되돌렸습니다. 설계자가 기존 문서와 코드를 대조해 설계를 갱신합니다.')
+
     if state['status'] == 'complete':
-        print('이미 완료된 작업입니다.')
+        print('이미 완료된 작업입니다. 설계부터 이어가려면 --redesign을 쓰세요.')
         return
+
+    if args.redesign and state['status'] != 'ready':
+        raise RuntimeError('중단된 호출이 있습니다. --resume으로 먼저 정리한 뒤 --redesign을 쓰세요.')
 
     if state['status'] != 'ready':
         if not args.resume:
@@ -180,15 +254,15 @@ def run(args, repo, work, runtime):
             raise RuntimeError('--resume에는 사용자 결정 또는 확인 결과를 담은 --feedback이 필요합니다.')
 
         # Do not interrupt a live agent during recovery.
-        if state.get('pane'):
-            panes = herdr('pane', 'list', '--workspace', state['pane'].split(':')[0])['panes']
-            if any(p['pane_id'] == state['pane'] for p in panes):
-                agents = herdr('agent', 'list')['agents']
-                current = next((a for a in agents if a['pane_id'] == state['pane']), None)
-                if (state['pane'] != state.get('design_pane') or not current or
-                        current['agent_status'] not in ('idle', 'done')):
-                    raise RuntimeError(f"기존 pane {state['pane']}을 확인하세요. 구현 pane은 종료하고, "
-                                       '설계 pane은 작업·승인 대기를 해소한 뒤 재개하세요.')
+        if state.get('pane') and pane_alive(state['pane']):
+            agents = herdr('agent', 'list')['agents']
+            current = next((a for a in agents if a['pane_id'] == state['pane']), None)
+            if (state['pane'] != state.get('design_pane') or not current or
+                    current['agent_status'] not in ('idle', 'done')):
+                raise RuntimeError(
+                    f"기존 pane {state['pane']}{pane_hint(state['pane'])}을 확인하세요. "
+                    '구현 pane은 에이전트 종료가 아니라 pane 자체를 닫아야 합니다. '
+                    '설계 pane은 작업·승인 대기를 해소한 뒤 재개하세요.')
 
         if state['status'] == 'launching' and not state.get('pane'):
             print('주의: pane 생성 중 중단되었습니다. --resume 전에 남은 pane을 확인해야 합니다.')
@@ -202,7 +276,8 @@ def run(args, repo, work, runtime):
     save(path, state)
 
     if args.stop_after == 'design' and state['phase'] != 'design':
-        print('최초 설계가 이미 끝났습니다. 구현하려면 --stop-after 옵션을 변경하세요.')
+        print('설계가 이미 끝났습니다. 설계를 다시 손보려면 --redesign을, 구현하려면 '
+              '--stop-after 옵션 변경을 쓰세요.')
         return
 
     iterations = 0
@@ -222,8 +297,7 @@ def run(args, repo, work, runtime):
         is_design = state['phase'] != 'implement'
         pane = state.get('design_pane') if is_design else None
         if pane:
-            panes = herdr('pane', 'list', '--workspace', pane.split(':')[0])['panes']
-            if not any(p['pane_id'] == pane for p in panes):
+            if not pane_alive(pane):
                 print('설계 pane이 없어 새 세션에서 작업 문서를 다시 읽습니다.')
                 pane = None
             else:
@@ -241,7 +315,10 @@ def run(args, repo, work, runtime):
 
         start_agent = pane is None
         if start_agent:
-            pane = herdr('pane', 'split', '--current', '--direction', args.direction,
+            # Split off the designer so the implementer lands under it instead of above it.
+            source = state.get('design_pane') if not is_design else None
+            source = source if source and pane_alive(source) else '--current'
+            pane = herdr('pane', 'split', source, '--direction', args.direction,
                          '--cwd', str(repo), '--no-focus')['pane']['pane_id']
             if is_design:
                 state.update(design_pane=pane, design_name='loop-' + state['run_id'][:12],
@@ -256,16 +333,20 @@ def run(args, repo, work, runtime):
         try:
             target = state['design_name'] if is_design else 'loop-' + state['run_id'][:12]
             if start_agent:
-                herdr('agent', 'start', target, '--kind', kind, '--pane', pane)
-            herdr('agent', 'prompt', target, prompt, '--wait', '--timeout', str(args.timeout * 1000),
-                  timeout=args.timeout + 30)
+                retry(lambda: herdr('agent', 'start', target, '--kind', kind, '--pane', pane))
+            # A stalled prompt on a still-booting agent is safe to repeat: the agent would be
+            # working, not idle, if the first one had landed.
+            retry(lambda: herdr('agent', 'prompt', target, prompt, '--wait',
+                                '--timeout', str(args.timeout * 1000), timeout=args.timeout + 30),
+                  guard=lambda: not result_path.exists())
             if is_design:
                 state['design_turns'] = state.get('design_turns', 0) + 1
 
             agents = herdr('agent', 'list')['agents']
             current = next((a for a in agents if a['pane_id'] == pane), None)
             if not current or current['agent_status'] not in ('idle', 'done'):
-                raise RuntimeError('에이전트가 정상 대기 상태가 아닙니다. 승인 요청과 터미널을 확인하세요.')
+                raise RuntimeError(f'에이전트가 정상 대기 상태가 아닙니다. pane {pane}{pane_hint(pane)}의 '
+                                   '승인 요청과 터미널을 확인하세요.')
 
             receipt = json.loads(result_path.read_text())
             action = validate_receipt(receipt, state, work)
@@ -331,18 +412,22 @@ def release(runtime):
     state = json.loads(path.read_text())
     # Check both panes: the designer can still be live while an implementation is interrupted.
     for pane in dict.fromkeys(p for p in (state.get('pane'), state.get('design_pane')) if p):
-        panes = herdr('pane', 'list', '--workspace', pane.split(':')[0])['panes']
-        if not any(p['pane_id'] == pane for p in panes):
+        if not pane_alive(pane):
             continue
         agents = herdr('agent', 'list')['agents']
         current = next((a for a in agents if a['pane_id'] == pane), None)
         if (pane != state.get('design_pane') or not current or
                 current['agent_status'] not in ('idle', 'done')):
-            raise RuntimeError(f'소유 정보를 해제할 수 없습니다. 기존 pane {pane}을 확인하세요. '
-                               '구현 pane은 종료하고, 설계 pane은 작업·승인 대기를 해소하세요.')
+            raise RuntimeError(
+                f'소유 정보를 해제할 수 없습니다. 기존 pane {pane}{pane_hint(pane)}을 확인하세요. '
+                '구현 pane은 pane 자체를 닫고, 설계 pane은 작업·승인 대기를 해소하세요.')
     if state['status'] == 'launching' and not state.get('pane'):
         raise RuntimeError('pane 생성 중 중단되어 실행 상태를 확인할 수 없습니다. '
                            'Herdr 화면에서 남은 pane을 확인한 뒤 --resume --feedback으로 복구하세요.')
+    design_pane = state.get('design_pane')
+    if design_pane and pane_alive(design_pane):
+        herdr('pane', 'close', design_pane)
+        print(f'설계 pane {design_pane}을 닫았습니다.')
     path.unlink()
     print(f"작업 소유 정보를 해제했습니다: {state['work']} (상태: {state['status']})")
     print('문서와 호출 기록은 그대로 남아 있습니다. 같은 --work로 다시 실행하면 최초 설계부터 시작하며, '
@@ -363,6 +448,8 @@ def main():
     parser.add_argument('--iterations', type=int, default=1,
                         help='이번 실행에서 구현 또는 검토를 마칠 횟수 (기본: 1)')
     parser.add_argument('--max-calls', type=int, default=20)
+    parser.add_argument('--redesign', action='store_true',
+                        help='완료했거나 대기 중인 작업을 설계 단계로 되돌려 설계를 갱신한다.')
     parser.add_argument('--max-task-attempts', type=int, default=3)
     parser.add_argument('--timeout', type=int, default=1800, help='호출별 제한 시간, 초')
     parser.add_argument('--design-turns', type=int, default=0,

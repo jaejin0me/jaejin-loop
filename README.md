@@ -112,6 +112,26 @@ tmp/issue-123/
 최초 설계는 반복 횟수에서 제외한다. `--stop-after design`은 `--iterations 1`만 허용한다.
 이미 설계가 끝났다면 `--stop-after design`은 추가 호출 없이 종료한다.
 
+## 끝난 작업의 설계를 다시 손보기
+
+`--redesign`은 단계를 설계로 되돌린다. `ready`와 `complete` 상태에서 쓸 수 있고,
+중단된 호출이 있으면 거부한다. 설계자가 기존 작업 문서와 실제 코드를 대조해 설계를 갱신한다.
+
+```sh
+./run.sh 21 --repo <worktree> --work tmp/issue-21 \
+  --redesign --stop-after design --iterations 1 --feedback '<바뀐 결정과 근거>'
+```
+
+요구사항이 바뀌었을 때 `--release`로 상태를 지울 필요가 없다.
+`--release`는 작업을 포기하고 worktree를 비울 때만 쓴다.
+
+## 일시적 실패 처리
+
+에이전트 기동 단계의 `agent_not_ready`, `agent_pane_busy`, `agent_prompt_stalled`는
+CLI 자체 업데이트나 아직 뜨는 중인 pane 때문에 나고 기다리면 풀린다.
+실행기가 5초 간격으로 세 번까지 다시 시도한다.
+프롬프트 재전송은 결과 파일이 아직 없을 때만 한다. 이미 들어간 작업을 두 번 시키지 않기 위해서다.
+
 설정한 단계에서 멈춘 것은 오류가 아니다. `--resume` 없이 같은 작업 경로로 다시 실행하면
 저장된 다음 단계부터 이어간다. 이전 실행이 구현 직후 멈췄다면 먼저 남은 설계 검토를 수행한다.
 `review` 기준에서는 이 검토도 이번 실행의 1회로 센다.
@@ -139,6 +159,7 @@ tmp/issue-123/
 pane 생성 중 중단되어 ID가 없는 경우에는 남은 pane을 직접 확인하고 `--resume --feedback`으로 복구한 뒤 해제한다.
 
 자동 무한 재시도는 없다. pane 분할 방향은 `--direction right` 또는 기본값 `down`으로 선택한다.
+설계 pane은 실행한 pane에서 쪼개고, 구현 pane은 설계 pane에서 쪼갠다. 그래서 화면 순서는 실행 → 설계 → 구현이 된다.
 
 설계 세션이 길어지면 `--design-turns N`으로 호출 N회마다 세션을 새로 시작할 수 있다.
 기본값 `0`은 세션을 계속 유지한다. 값을 주면 설계 pane을 닫고 다음 호출에서 작업 문서를 다시 읽으므로,

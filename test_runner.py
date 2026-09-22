@@ -27,11 +27,13 @@ class LoopTests(unittest.TestCase):
         self.args = argparse.Namespace(issue='123', resume=False, feedback='', max_calls=5,
                                        max_task_attempts=3, direction='down', design_kind='claude',
                                        implement_kind='codex', timeout=30, design_turns=0,
-                                       stop_after='review', iterations=1)
+                                       stop_after='review', iterations=1, redesign=False)
         self.calls = []
         self.pane = None
         self.panes = set()
         self.status = 'idle'
+        self.designer = None
+        self.close_designer = False
         self.fail_prompt = False
         self.continue_review = False
         self.skip_review_record = False
@@ -48,8 +50,13 @@ class LoopTests(unittest.TestCase):
         if args[:2] == ('pane', 'split'):
             self.pane = f'w1:p{len(self.calls)}'
             self.panes.add(self.pane)
+            if self.designer is None:
+                self.designer = self.pane
             return {'pane': {'pane_id': self.pane}}
         if args[:2] == ('pane', 'list'):
+            # The user may close the designer pane while an implementation is being prepared.
+            if self.close_designer and self.state()['phase'] == 'implement':
+                self.panes.discard(self.designer)
             return {'panes': [{'pane_id': p} for p in self.panes]}
         if args[:2] == ('agent', 'list'):
             return {'agents': [{'pane_id': p, 'agent_status': self.status} for p in self.panes]}
@@ -94,6 +101,22 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(prompts[0], prompts[2])
         self.assertEqual(self.state()['status'], 'complete')
         self.assertIsNone(self.state()['design_pane'])
+
+    def test_implementer_pane_splits_off_the_designer(self):
+        with patch.object(runner, 'herdr', self.fake_herdr):
+            self.loop()
+        splits = [c for c in self.calls if c[:2] == ('pane', 'split')]
+        self.assertEqual(len(splits), 2)
+        # The designer has no pane to sit under yet; the implementer must land under the designer.
+        self.assertEqual(splits[0][2], '--current')
+        self.assertEqual(splits[1][2], self.designer)
+
+    def test_implementer_falls_back_to_the_current_pane_without_a_designer(self):
+        self.close_designer = True
+        with patch.object(runner, 'herdr', self.fake_herdr):
+            self.loop()
+        splits = [c for c in self.calls if c[:2] == ('pane', 'split')]
+        self.assertEqual([c[2] for c in splits[:2]], ['--current', '--current'])
 
     def test_runner_state_lives_outside_the_worktree(self):
         with patch.object(runner, 'herdr', self.fake_herdr):
@@ -419,6 +442,29 @@ class LoopTests(unittest.TestCase):
             self.loop()
         self.assertEqual(self.state()['work'], str(other))
 
+    def test_redesign_reopens_a_completed_work_for_design(self):
+        """Extending finished work is common; it should not need --release."""
+        with patch.object(runner, 'herdr', self.fake_herdr):
+            self.loop()
+            self.assertEqual(self.state()['status'], 'complete')
+            self.args.redesign = True
+            self.args.stop_after = 'design'
+            self.loop()
+        # The design call ran again instead of returning '이미 완료된 작업입니다'.
+        self.assertEqual(self.state()['status'], 'ready')
+
+    def test_redesign_refuses_while_a_call_is_interrupted(self):
+        with patch.object(runner, 'herdr', self.fake_herdr):
+            self.loop()
+        path = self.runtime / 'state.json'
+        state = json.loads(path.read_text())
+        state['status'] = 'blocked'
+        path.write_text(json.dumps(state, ensure_ascii=False))
+        self.args.redesign = True
+        with patch.object(runner, 'herdr', self.fake_herdr), \
+                self.assertRaisesRegex(RuntimeError, '중단된 호출'):
+            self.loop()
+
     def test_missing_work_folder_does_not_deadlock_the_worktree(self):
         other = self.repo / 'other-work'
         (other / 'runs').mkdir(parents=True)
@@ -490,6 +536,69 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(self.state()['status'], 'blocked')
         self.assertIn(self.state()['pane'], self.panes)
         self.assertEqual(self.log_lines()[0]['action'], 'error')
+
+
+class DocumentTests(unittest.TestCase):
+    """A resumed review sometimes appends a second section instead of updating the first."""
+
+    PROGRESS = ('## T-001\n\n### 설계 검토\n\nrun_id: old\n\n'
+                '### 설계 검토\n\nrun_id: new\n')
+
+    def test_records_finds_run_id_in_a_repeated_section(self):
+        self.assertTrue(runner.records('new', self.PROGRESS, 'T-001', '설계 검토'))
+        self.assertTrue(runner.records('old', self.PROGRESS, 'T-001', '설계 검토'))
+        self.assertFalse(runner.records('missing', self.PROGRESS, 'T-001', '설계 검토'))
+
+    def test_records_finds_run_id_in_a_repeated_task_section(self):
+        progress = '## T-001\n\n### 구현 결과\n\nrun_id: a\n\n## T-001\n\n### 구현 결과\n\nrun_id: b\n'
+        self.assertTrue(runner.records('b', progress, 'T-001', '구현 결과'))
+
+    def test_duplicated_names_the_repeated_titles(self):
+        self.assertEqual(runner.duplicated(self.PROGRESS, 'T-001', '설계 검토'), ['### 설계 검토'])
+        single = '## T-001\n\n### 설계 검토\n\nrun_id: only\n'
+        self.assertEqual(runner.duplicated(single, 'T-001', '설계 검토'), [])
+
+    def test_section_still_returns_the_first_body(self):
+        self.assertIn('run_id: old', runner.section(self.PROGRESS, '###', '설계 검토'))
+
+
+class RetryTests(unittest.TestCase):
+    """A CLI self-update or a booting pane clears on its own; do not spend a user round trip."""
+
+    def test_transient_failure_is_retried(self):
+        attempts = []
+
+        def call():
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise RuntimeError('명령 실패: herdr agent start\n{"code":"agent_pane_busy"}')
+            return 'started'
+
+        with patch.object(runner.time, 'sleep'):
+            self.assertEqual(runner.retry(call), 'started')
+        self.assertEqual(len(attempts), 3)
+
+    def test_other_failures_are_not_retried(self):
+        attempts = []
+
+        def call():
+            attempts.append(1)
+            raise RuntimeError('tasks.md에 항목이 없습니다.')
+
+        with patch.object(runner.time, 'sleep'), self.assertRaises(RuntimeError):
+            runner.retry(call)
+        self.assertEqual(len(attempts), 1)
+
+    def test_guard_stops_a_repeat_that_would_duplicate_work(self):
+        attempts = []
+
+        def call():
+            attempts.append(1)
+            raise RuntimeError('{"code":"agent_prompt_stalled"}')
+
+        with patch.object(runner.time, 'sleep'), self.assertRaises(RuntimeError):
+            runner.retry(call, guard=lambda: False)
+        self.assertEqual(len(attempts), 1)
 
 
 class CommandTests(unittest.TestCase):
