@@ -44,10 +44,13 @@ def retry(call, attempts=3, delay=5, guard=None):
         try:
             return call()
         except RuntimeError as error:
-            if not remaining or not any(code in str(error) for code in TRANSIENT):
+            matched = next((code for code in TRANSIENT if code in str(error)), None)
+            if not remaining or not matched:
                 raise
             if guard and not guard():
                 raise
+            print(f'주의: {matched} 때문에 {delay}초 뒤 다시 시도합니다. 남은 시도 {remaining}회.',
+                  flush=True)
             time.sleep(delay)
     return None
 
@@ -236,9 +239,11 @@ def run(args, repo, work, runtime):
         save(path, state)
 
     if args.redesign and state['status'] in ('ready', 'complete'):
+        was = f"{state['status']} / {state['phase']}"
         state.update(phase='design', task=None, status='ready', review_target=None)
         save(path, state)
-        print('설계 단계로 되돌렸습니다. 설계자가 기존 문서와 코드를 대조해 설계를 갱신합니다.')
+        print(f"설계 단계로 되돌렸습니다({was}에서). "
+              '설계자가 기존 문서와 코드를 대조해 설계를 갱신합니다.')
 
     if state['status'] == 'complete':
         print('이미 완료된 작업입니다. 설계부터 이어가려면 --redesign을 쓰세요.')
@@ -327,7 +332,8 @@ def run(args, repo, work, runtime):
         state.update(pane=pane, status='active')
         save(path, state)
         kind = args.implement_kind if state['phase'] == 'implement' else args.design_kind
-        print(f"{state['attempt']}: {state['phase']} {state['task'] or ''} ({pane}, {kind})", flush=True)
+        print(f"{state['attempt']}: {state['phase']} {state['task'] or ''} "
+              f"({pane}{pane_hint(pane)}, {kind})", flush=True)
 
         started, logged = time.time(), False
         try:
