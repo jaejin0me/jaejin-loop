@@ -114,6 +114,15 @@ prefix: imperative title in English (#123)
 
 prefix: feat | fix | refactor | chore | docs | test
 
+- Keep the detail lines to the essentials, at most 3 lines.
+
+### Commit Scope
+
+- Commit per work context. Do not split commits into needlessly fine-grained pieces.
+- If a later fix, improvement, or change is code that the earlier commit should have
+  already handled, amend that commit instead of adding a separate one.
+  Amend only commits that have not been pushed yet.
+
 ## Agentic Operation
 
 ### Subagent Model Selection
