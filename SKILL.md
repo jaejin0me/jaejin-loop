@@ -58,6 +58,19 @@ git -C <주 저장소> worktree add ../<저장소 이름>-issue-<번호> -b loop
 브랜치가 이미 있으면 `-b` 없이 붙인다. 기존 작업이 있는 브랜치를 쓸 때는 먼저
 `git -C <worktree> status`로 상태를 확인하고 사용자에게 보여준다.
 
+주 저장소의 `CLAUDE.md`가 Git에 추적되지 않는 파일이면 새 worktree에는 따라오지 않는다.
+그러면 worktree에서 실행되는 에이전트가 프로젝트 지침 없이 작업한다.
+worktree를 만든 직후에 복사한다. worktree에 이미 있는 파일은 덮어쓰지 않는다.
+
+```sh
+test -f <주 저장소>/CLAUDE.md \
+  && ! git -C <주 저장소> ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1 \
+  && cp -n <주 저장소>/CLAUDE.md <worktree>/CLAUDE.md
+```
+
+복사한 파일은 worktree에서 미추적 변경으로 보인다. 대상 프로젝트가 `CLAUDE.md`를 무시하지 않으면
+검토 호출에 전달되는 변경 파일 수에 1개가 더해진다.
+
 작업 문서 폴더는 worktree 안의 `tmp/issue-<번호>`를 기본으로 쓴다.
 대상 프로젝트가 `tmp/`를 무시하지 않는다면 커밋 대상에 섞이므로, 사용자에게 알리고
 `git -C <worktree> check-ignore -q tmp/` 결과를 근거로 제시한다.
