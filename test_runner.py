@@ -47,6 +47,12 @@ class LoopTests(unittest.TestCase):
 
     def fake_herdr(self, *args, **kwargs):
         self.calls.append(args)
+        if args[:2] == ('workspace', 'create'):
+            self.pane = f'w{len(self.calls)}:p1'
+            self.panes.add(self.pane)
+            if self.designer is None:
+                self.designer = self.pane
+            return {'root_pane': {'pane_id': self.pane}}
         if args[:2] == ('pane', 'split'):
             self.pane = f'w1:p{len(self.calls)}'
             self.panes.add(self.pane)
@@ -105,18 +111,20 @@ class LoopTests(unittest.TestCase):
     def test_implementer_pane_splits_off_the_designer(self):
         with patch.object(runner, 'herdr', self.fake_herdr):
             self.loop()
+        # The designer opens its own workspace; the implementer must land under the designer.
+        creates = [c for c in self.calls if c[:2] == ('workspace', 'create')]
+        self.assertEqual(len(creates), 1)
+        self.assertEqual(creates[0][creates[0].index('--label') + 1], self.repo.name)
         splits = [c for c in self.calls if c[:2] == ('pane', 'split')]
-        self.assertEqual(len(splits), 2)
-        # The designer has no pane to sit under yet; the implementer must land under the designer.
-        self.assertEqual(splits[0][2], '--current')
-        self.assertEqual(splits[1][2], self.designer)
+        self.assertEqual([c[2] for c in splits], [self.designer])
+        self.assertFalse(any('--current' in c for c in self.calls))
 
-    def test_implementer_falls_back_to_the_current_pane_without_a_designer(self):
+    def test_implementer_opens_a_workspace_without_a_designer(self):
         self.close_designer = True
         with patch.object(runner, 'herdr', self.fake_herdr):
             self.loop()
-        splits = [c for c in self.calls if c[:2] == ('pane', 'split')]
-        self.assertEqual([c[2] for c in splits[:2]], ['--current', '--current'])
+        self.assertEqual(len([c for c in self.calls if c[:2] == ('workspace', 'create')]), 3)
+        self.assertFalse(any(c[:2] == ('pane', 'split') for c in self.calls))
 
     def test_runner_state_lives_outside_the_worktree(self):
         with patch.object(runner, 'herdr', self.fake_herdr):
@@ -395,8 +403,8 @@ class LoopTests(unittest.TestCase):
             self.panes.remove(previous)
             self.args.stop_after = 'review'
             self.loop()
-        # Completion clears design_pane, so the split calls are what prove the recreation.
-        self.assertEqual(len([c for c in self.calls if c[:2] == ('pane', 'split')]), 3)
+        # Completion clears design_pane, so the new workspaces are what prove the recreation.
+        self.assertEqual(len([c for c in self.calls if c[:2] == ('workspace', 'create')]), 2)
         self.assertIsNone(self.state()['design_pane'])
         self.assertEqual(self.state()['status'], 'complete')
 
@@ -560,6 +568,22 @@ class DocumentTests(unittest.TestCase):
 
     def test_section_still_returns_the_first_body(self):
         self.assertIn('run_id: old', runner.section(self.PROGRESS, '###', '설계 검토'))
+
+
+class PaneAliveTests(unittest.TestCase):
+    def test_closed_workspace_means_the_pane_is_gone(self):
+        def closed(*args, **kwargs):
+            raise RuntimeError("{'code': 'workspace_not_found', 'message': 'workspace wP not found'}")
+
+        with patch.object(runner, 'herdr', closed):
+            self.assertFalse(runner.pane_alive('wP:p1'))
+
+    def test_other_lookup_failures_still_raise(self):
+        def broken(*args, **kwargs):
+            raise RuntimeError('명령 시간 초과: herdr (30초)')
+
+        with patch.object(runner, 'herdr', broken), self.assertRaises(RuntimeError):
+            runner.pane_alive('wP:p1')
 
 
 class RetryTests(unittest.TestCase):

@@ -56,7 +56,13 @@ def retry(call, attempts=3, delay=5, guard=None):
 
 
 def pane_alive(pane):
-    panes = herdr('pane', 'list', '--workspace', pane.split(':')[0])['panes']
+    try:
+        panes = herdr('pane', 'list', '--workspace', pane.split(':')[0])['panes']
+    except RuntimeError as error:
+        # Closing the last pane closes the loop's workspace too.
+        if 'workspace_not_found' in str(error):
+            return False
+        raise
     return any(p['pane_id'] == pane for p in panes)
 
 
@@ -321,10 +327,14 @@ def run(args, repo, work, runtime):
         start_agent = pane is None
         if start_agent:
             # Split off the designer so the implementer lands under it instead of above it.
+            # Without one, open a workspace of its own so the loop stays off the caller's tab.
             source = state.get('design_pane') if not is_design else None
-            source = source if source and pane_alive(source) else '--current'
-            pane = herdr('pane', 'split', source, '--direction', args.direction,
-                         '--cwd', str(repo), '--no-focus')['pane']['pane_id']
+            if source and pane_alive(source):
+                pane = herdr('pane', 'split', source, '--direction', args.direction,
+                             '--cwd', str(repo), '--no-focus')['pane']['pane_id']
+            else:
+                pane = herdr('workspace', 'create', '--cwd', str(repo), '--label', repo.name,
+                             '--no-focus')['root_pane']['pane_id']
             if is_design:
                 state.update(design_pane=pane, design_name='loop-' + state['run_id'][:12],
                              design_kind=args.design_kind, design_turns=0)

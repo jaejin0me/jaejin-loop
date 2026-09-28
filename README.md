@@ -159,7 +159,9 @@ CLI 자체 업데이트나 아직 뜨는 중인 pane 때문에 나고 기다리�
 pane 생성 중 중단되어 ID가 없는 경우에는 남은 pane을 직접 확인하고 `--resume --feedback`으로 복구한 뒤 해제한다.
 
 자동 무한 재시도는 없다. pane 분할 방향은 `--direction right` 또는 기본값 `down`으로 선택한다.
-설계 pane은 실행한 pane에서 쪼개고, 구현 pane은 설계 pane에서 쪼갠다. 그래서 화면 순서는 실행 → 설계 → 구현이 된다.
+설계 pane은 실행한 pane과 분리된 새 Herdr workspace에서 연다. workspace 이름은 worktree 폴더 이름이다.
+구현 pane은 설계 pane에서 쪼개므로 같은 workspace에서 설계 아래에 붙는다.
+Herdr는 마지막 pane이 닫히면 workspace도 닫는다. 그래서 완료나 해제로 설계 pane이 닫히면 workspace도 사라진다.
 
 설계 세션이 길어지면 `--design-turns N`으로 호출 N회마다 세션을 새로 시작할 수 있다.
 기본값 `0`은 세션을 계속 유지한다. 값을 주면 설계 pane을 닫고 다음 호출에서 작업 문서를 다시 읽으므로,
