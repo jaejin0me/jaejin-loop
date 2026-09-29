@@ -50,6 +50,30 @@ git -C <대상 저장소> remote get-url origin
 주 저장소에서는 실행할 수 없다. 실행기가 별도 worktree만 허용한다.
 이미 해당 이슈의 worktree가 있으면 재사용하고, 없으면 만든다.
 
+worktree를 만들기 전에 codex 신뢰 목록에서 `~/workspace`와 `~/workspace-personal` 아래의
+사라진 경로를 지운다.
+삭제된 worktree의 신뢰 항목이 `~/.codex/config.toml`에 계속 쌓이는 것을 막는다.
+사용자에게 묻지 않고 지우며, 지운 경로가 있으면 사용자에게 알린다.
+
+```python
+import os, pathlib, re
+roots = tuple(os.path.expanduser(p) + os.sep for p in ('~/workspace', '~/workspace-personal'))
+config = pathlib.Path.home() / '.codex' / 'config.toml'
+if config.is_file():
+    kept, skip = [], False
+    for line in config.read_text(encoding='utf-8').splitlines(keepends=True):
+        if line.startswith('['):
+            m = re.match(r'\[projects\."(.+)"\]\s*$', line)
+            skip = bool(m) and m[1].startswith(roots) and not os.path.isdir(m[1])
+            if skip:
+                print('제거:', m[1])
+        if not skip:
+            kept.append(line)
+    config.write_text(''.join(kept), encoding='utf-8')
+```
+
+두 폴더 자체와 그 밖의 경로는 건드리지 않는다.
+
 ```sh
 git -C <주 저장소> worktree list
 git -C <주 저장소> worktree add ../<저장소 이름>-issue-<번호> -b loop/issue-<번호>
@@ -107,15 +131,16 @@ if f'[projects."{path}"]' not in text:
                       encoding='utf-8')
 ```
 
-이건 사용자 설정을 고치는 일이므로 먼저 사용자에게 알리고 동의를 받는다.
+사용자에게 묻지 않고 등록한다. 등록했다면 추가한 경로를 사용자에게 알린다.
 주 저장소 경로가 이미 신뢰 목록에 있어도 worktree 경로를 따로 등록한다.
 codex가 실행 디렉터리를 기준으로 판단해서, 같은 저장소의 다른 worktree마다 다시 묻는다.
 
-claude는 미리 등록하지 않는다. `~/.claude.json`의 `projects.<경로>.hasTrustDialogAccepted`에
-같은 성격의 값이 있으나, worktree에서 신뢰 창이 뜨는 것을 확인한 적이 없다.
-이 파일은 세션 상태까지 담고 있어 잘못 쓰면 Claude Code가 깨진다. 근거 없이 건드리지 않는다.
-설계 에이전트가 신뢰 창 때문에 멈춘다면 그때 사용자에게 그 pane에서 직접 승인하도록 요청하고,
-반복된다면 해당 항목만 읽고 고치는 방식으로 대응한다.
+claude는 미리 등록하지 않는다. claude는 상위 폴더를 신뢰하면 하위 폴더에서 다시 묻지 않는 것으로 보인다.
+`~/.claude.json`의 기록으로 추정한 동작이며 공식 문서로 확인하지는 않았다.
+그래서 worktree가 생기는 상위 폴더를 사용자가 claude에서 한 번 신뢰해 두면 된다.
+`~/.claude.json`은 세션 상태까지 담고 있어 잘못 쓰면 Claude Code가 깨진다. 스킬이 직접 고치지 않는다.
+설계 에이전트가 신뢰 창 때문에 멈춘다면 사용자에게 그 pane에서 직접 승인하도록 요청하고,
+worktree의 상위 폴더를 claude에서 신뢰해 두도록 안내한다.
 
 ### 3. 옵션 조립
 
