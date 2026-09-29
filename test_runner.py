@@ -108,6 +108,13 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(self.state()['status'], 'complete')
         self.assertIsNone(self.state()['design_pane'])
 
+    def test_only_codex_skips_update_check(self):
+        with patch.object(runner, 'herdr', self.fake_herdr):
+            self.loop()
+        starts = {c[c.index('--kind') + 1]: c for c in self.calls if c[:2] == ('agent', 'start')}
+        self.assertEqual(starts['codex'][-3:], ('--', '-c', 'check_for_update_on_startup=false'))
+        self.assertNotIn('--', starts['claude'])
+
     def test_implementer_pane_splits_off_the_designer(self):
         with patch.object(runner, 'herdr', self.fake_herdr):
             self.loop()

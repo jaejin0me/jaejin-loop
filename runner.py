@@ -349,7 +349,9 @@ def run(args, repo, work, runtime):
         try:
             target = state['design_name'] if is_design else 'loop-' + state['run_id'][:12]
             if start_agent:
-                retry(lambda: herdr('agent', 'start', target, '--kind', kind, '--pane', pane))
+                # A pending codex update prompt would block the agent from taking input.
+                extra = ('--', '-c', 'check_for_update_on_startup=false') if kind == 'codex' else ()
+                retry(lambda: herdr('agent', 'start', target, '--kind', kind, '--pane', pane, *extra))
             # A stalled prompt on a still-booting agent is safe to repeat: the agent would be
             # working, not idle, if the first one had landed.
             retry(lambda: herdr('agent', 'prompt', target, prompt, '--wait',

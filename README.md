@@ -21,6 +21,7 @@ macOS 또는 Linux의 Herdr pane 안에서 실행한다.
 사용할 에이전트 CLI와 이슈 읽기용 `gh` 또는 `glab` 인증을 먼저 준비한다.
 에이전트의 권한 설정은 그대로 사용하며, 승인 창을 자동으로 통과시키지 않는다.
 구현에 codex를 쓰면 스킬이 새 worktree 경로를 codex 신뢰 목록에 미리 등록한다.
+루프가 띄운 codex는 시작할 때 업데이트 확인을 건너뛴다. 직접 띄운 codex는 그대로 알린다.
 worktree를 만들기 전에는 `~/workspace`와 `~/workspace-personal` 아래에서 사라진 경로의 신뢰 항목을 지운다.
 
 ## 스킬로 설치
