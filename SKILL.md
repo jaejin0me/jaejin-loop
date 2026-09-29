@@ -68,12 +68,27 @@ test -f <주 저장소>/CLAUDE.md \
   && cp -n <주 저장소>/CLAUDE.md <worktree>/CLAUDE.md
 ```
 
-복사한 파일은 worktree에서 미추적 변경으로 보인다. 대상 프로젝트가 `CLAUDE.md`를 무시하지 않으면
-검토 호출에 전달되는 변경 파일 수에 1개가 더해진다.
-
 작업 문서 폴더는 worktree 안의 `tmp/issue-<번호>`를 기본으로 쓴다.
-대상 프로젝트가 `tmp/`를 무시하지 않는다면 커밋 대상에 섞이므로, 사용자에게 알리고
-`git -C <worktree> check-ignore -q tmp/` 결과를 근거로 제시한다.
+
+#### 루프 파일 Git 제외 등록
+
+복사한 `CLAUDE.md`와 작업 문서 폴더는 worktree에서 미추적 파일로 보인다.
+대상 프로젝트가 이 경로를 무시하지 않으면 커밋 대상에 섞인다.
+worktree를 만든 직후 로컬 Git 제외 규칙에 등록한다. 이미 있는 항목은 다시 넣지 않는다.
+`CLAUDE.md`는 위에서 복사한 경우에만 등록한다. `--work`를 바꿨다면 그 경로를 등록한다.
+
+```sh
+exclude=$(git -C <worktree> rev-parse --path-format=absolute --git-path info/exclude)
+mkdir -p "$(dirname "$exclude")"
+for p in /CLAUDE.md /tmp/issue-<번호>/; do
+  grep -qxF "$p" "$exclude" 2>/dev/null || echo "$p" >> "$exclude"
+done
+```
+
+이 파일은 주 저장소의 `.git/info/exclude`이며 모든 worktree가 함께 쓴다.
+그래서 주 저장소에서도 두 경로가 미추적 목록에서 사라진다. 이 점을 사용자에게 알린다.
+등록 후 `git -C <worktree> status --short`에 두 경로가 나오지 않는지 확인한다.
+검토 호출에 전달되는 변경 파일 수도 `git status` 기준이라 복사한 `CLAUDE.md`를 세지 않는다.
 
 #### codex 디렉터리 신뢰 등록
 

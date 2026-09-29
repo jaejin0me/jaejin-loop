@@ -93,7 +93,8 @@ tmp/issue-123/
 
 `references/designer.md`와 `references/implementer.md`는 실행 지침이다.
 생성되는 설계 문서는 `--work`로 지정한 작업 폴더의 `design.md`에 저장한다.
-작업 문서는 자동 커밋하지 않는다. 필요하면 해당 폴더만 로컬 Git 제외 규칙에 추가한다.
+작업 문서는 자동 커밋하지 않는다. 스킬은 worktree를 만든 직후 작업 폴더와 복사한 `CLAUDE.md`를
+로컬 Git 제외 규칙인 `.git/info/exclude`에 추가한다. 이 파일은 주 저장소와 공유된다.
 
 ## 반복과 제한
 
