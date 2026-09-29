@@ -16,7 +16,7 @@ macOS 또는 Linux에서 다음을 준비한다.
 - GitHub 저장소라면 `gh`, GitLab 저장소라면 `glab`의 이슈 조회 인증.
 
 에이전트가 표시하는 권한 승인과 프로젝트 신뢰 확인은 사용자가 직접 처리한다.
-단, 구현에 codex를 쓰면 스킬이 새 worktree 경로를 codex 신뢰 목록에 묻지 않고 등록한다.
+단, 설계나 구현에 codex를 쓰면 스킬이 새 worktree 경로를 codex 신뢰 목록에 묻지 않고 등록한다.
 worktree를 만들기 전에는 `~/workspace`와 `~/workspace-personal` 아래에서 사라진 경로의 신뢰 항목을 묻지 않고 지운다.
 루프는 승인 창을 자동으로 통과시키지 않는다.
 

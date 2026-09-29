@@ -116,7 +116,7 @@ done
 
 #### codex 디렉터리 신뢰 등록
 
-`--implement-kind codex`로 새 worktree에서 처음 실행하면 codex가 디렉터리 신뢰를 묻는다.
+`--design-kind` 또는 `--implement-kind`가 `codex`이면 새 worktree에서 처음 실행할 때 codex가 디렉터리 신뢰를 묻는다.
 그 창이 뜨는 동안 codex는 프롬프트를 받지 못해 실행기가 `agent_not_ready`로 멈춘다.
 worktree를 만든 직후에 신뢰를 미리 등록해 이 중단을 없앤다.
 
