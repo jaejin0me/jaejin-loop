@@ -115,6 +115,7 @@ prefix: imperative title in English (#123)
 prefix: feat | fix | refactor | chore | docs | test
 
 - Keep the detail lines to the essentials, at most 3 lines.
+- Do not include issue-closing keywords such as `Closes #123` or `Fixes #123`.
 
 ### Commit Scope
 
