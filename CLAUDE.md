@@ -123,6 +123,13 @@ prefix: feat | fix | refactor | chore | docs | test
   already handled, amend that commit instead of adding a separate one.
   Amend only commits that have not been pushed yet.
 
+### Before Opening a PR or MR
+
+- Run `git fetch` and check that the branch contains the latest target branch.
+- If it is behind, rebase onto the target branch and rerun the checks before opening it.
+- If the rebase conflicts, stop and ask the user.
+- Keep the PR or MR description to the essentials, short.
+
 ## Agentic Operation
 
 ### Subagent Model Selection
